@@ -24,14 +24,13 @@ from datetime import datetime
 from functools import partial
 
 import torch
-from model import Transformer, ModelArgs
+from gimli.model import Transformer, ModelArgs
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from tinystories import Task
-from export import model_export
-import torch._dynamo
-torch._dynamo.config.suppress_errors = True
+from gimli.dataloader import Task
+from gimli.export import model_export
+
 # -----------------------------------------------------------------------------
 # I/O
 out_dir = "out"
@@ -83,6 +82,7 @@ config = {k: globals()[k] for k in config_keys}  # will be useful for logging
 # -----------------------------------------------------------------------------
 
 # fixing some hyperparams to sensible defaults
+config = init_config()
 lr_decay_iters = max_iters  # should be ~= max_iters per Chinchilla
 min_lr = 0.0  # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 

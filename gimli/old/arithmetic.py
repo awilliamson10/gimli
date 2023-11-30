@@ -18,7 +18,7 @@ import torch
 import torch.distributed as dist
 from tqdm import tqdm
 
-from tokenizer import Tokenizer
+from gimli.data.tokenizer import Tokenizer
 
 DATA_CACHE_DIR = "dataset"
 
@@ -43,8 +43,8 @@ def download():
     os.makedirs(DATA_CACHE_DIR, exist_ok=True)
 
     # download the TinyStories dataset, unless it's already downloaded
-    data_url = "https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStories_all_data.tar.gz"
-    data_filename = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data.tar.gz")
+    data_url = "https://huggingface.co/awilliamson/gimli_math/resolve/main/gimli_math.zip?download=true"
+    data_filename = os.path.join(DATA_CACHE_DIR, "gimli_math")
     if not os.path.exists(data_filename):
         print(f"Downloading {data_url} to {data_filename}...")
         download_file(data_url, data_filename)
@@ -52,11 +52,11 @@ def download():
         print(f"{data_filename} already exists, skipping download...")
 
     # unpack the tar.gz file into all the data shards (json files)
-    data_dir = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data")
+    data_dir = os.path.join(DATA_CACHE_DIR, "")
     if not os.path.exists(data_dir):
         os.makedirs(data_dir, exist_ok=True)
         print(f"Unpacking {data_filename}...")
-        os.system(f"tar -xzf {data_filename} -C {data_dir}")
+        os.system(f"unzip {data_filename} -d {data_dir}")
     else:
         print(f"{data_dir} already exists, skipping unpacking...")
 
