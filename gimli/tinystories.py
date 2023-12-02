@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 from gimli.data.tokenizer import Tokenizer
 
-DATA_CACHE_DIR = "data"
+DATA_CACHE_DIR = "gimli/data"
 
 def download_file(url: str, fname: str, chunk_size=1024):
     """Helper function to download a file from a given url"""
@@ -159,6 +159,7 @@ def process_shard(args, vocab_size):
 def pretokenize(vocab_size):
     # iterate the shards and tokenize all of them one by one
     data_dir = os.path.join(DATA_CACHE_DIR, "TinyStories_all_data")
+    print(f"Tokenizing all shards in {data_dir}...")
     shard_filenames = sorted(glob.glob(os.path.join(data_dir, "*.json")))
     if vocab_size > 0:
         # .bin files will be saved into tok{N} directory, create it once here

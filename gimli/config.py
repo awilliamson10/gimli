@@ -60,6 +60,9 @@ class TrainConfiguration:
     def min_lr(self):
         return 0.0
     
+    def device_type(self):
+        return "cuda" if self.device.startswith("cuda") else "cpu"
+    
 def from_yaml_to_train_config(yaml_file):
     with open(yaml_file, 'r') as f:
         config_dict = yaml.safe_load(f)

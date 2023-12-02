@@ -33,7 +33,7 @@ class PretokDataset(IterableDataset):
         self.vocab_source = vocab_source
 
         # Determine the directory containing the required .bin files
-        bin_dir_suffix = "math" if vocab_source == "llama2" else f"tok{vocab_size}"
+        bin_dir_suffix = "TinyStories_all_data" if vocab_source == "llama2" else f"tok{vocab_size}"
         self.bin_dir = os.path.join(DATA_CACHE_DIR, bin_dir_suffix)
 
     def __iter__(self):
@@ -66,23 +66,23 @@ class PretokDataset(IterableDataset):
         while True:
             rng.shuffle(shard_filenames)
             for shard in shard_filenames:
-                with np.memmap(shard, dtype=np.uint16, mode="r") as m:
-                    num_batches = len(m) // self.max_seq_len
-                    num_batches -= 1  # Drop the last partial batch if exists
-                    
-                    if num_batches <= 0:
-                        raise ValueError("Shard is too small; investigate the issue.")
-                    
-                    batch_indices = list(range(num_batches))
-                    rng.shuffle(batch_indices)
-                    for index in batch_indices:
-                        start = index * self.max_seq_len
-                        end = start + self.max_seq_len + 1
+                m = np.memmap(shard, dtype=np.uint16, mode="r")
+                num_batches = len(m) // self.max_seq_len
+                num_batches -= 1  # Drop the last partial batch if exists
+                
+                if num_batches <= 0:
+                    raise ValueError("Shard is too small; investigate the issue.")
+                
+                batch_indices = list(range(num_batches))
+                rng.shuffle(batch_indices)
+                for index in batch_indices:
+                    start = index * self.max_seq_len
+                    end = start + self.max_seq_len + 1
 
-                        # Prepare the batch as torch tensors
-                        batch_data = torch.from_numpy(m[start:end].astype(np.int64))
-                        x, y = batch_data[:-1], batch_data[1:]
-                        yield x, y
+                    # Prepare the batch as torch tensors
+                    batch_data = torch.from_numpy(m[start:end].astype(np.int64))
+                    x, y = batch_data[:-1], batch_data[1:]
+                    yield x, y
 
 
 class Task:

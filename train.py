@@ -8,18 +8,23 @@ from tqdm import tqdm
 import accelerate
 import os
 import torch
-from config import global_config as config
+from gimli.config import global_config as config
 from gimli.export import model_export
 from functools import partial
-from gimli.dataloader import Task
+from gimli.tinystories import Task
 from gimli.model import Transformer, ModelArgs
 from gimli.scheduler import cosine_lr
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
 
 accelerator = accelerate.Accelerator(
-    mixed_precision=config.dtype if config.dtype != "float32" else "no",
+    # mixed_precision=config.dtype if config.dtype != "fp32" else "no",
+    cpu=config.device == "cpu",
     gradient_accumulation_steps=config.gradient_accumulation_steps,
     log_with="wandb" if config.wandb_log else None,
     dispatch_batches=True, # This is used when using IterableDataset
+
 )
 
 
@@ -70,6 +75,7 @@ def train(model, optimizer, scheduler, iter_batches, model_args):
     last_save = 0
 
     while True:
+        print(f"global_step: {global_step}")
         if global_step % config.eval_interval == 0 and accelerator.is_main_process:
             model.eval()
             val_loss = 0.0
@@ -101,6 +107,7 @@ def train(model, optimizer, scheduler, iter_batches, model_args):
         # forward backward update, with gradient accumulation
         model.train()
         for micro_step in range(config.gradient_accumulation_steps):
+            print(f"micro_step: {micro_step}")
             X, Y = next(train_batch_iter)
             _, loss = model(X, Y)
             loss = loss / config.gradient_accumulation_steps
@@ -192,7 +199,7 @@ def main():
         max_seq_len=config.max_seq_len,
         dropout=config.dropout,
     )
-    model = init_model(model_args)
+    model = init_model(config.init_from, model_args)
 
     # optimizer
     optimizer = model.configure_optimizers(config.weight_decay, config.learning_rate, (config.beta1, config.beta2), config.device_type)
