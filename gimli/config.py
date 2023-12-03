@@ -54,12 +54,15 @@ class TrainConfiguration:
     wandb_project: str = "gimli_math"
     wandb_run_name: str = "run" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
+    @property
     def lr_decay_iters(self):
         return self.max_iters
     
+    @property
     def min_lr(self):
         return 0.0
     
+    @property
     def device_type(self):
         return "cuda" if self.device.startswith("cuda") else "cpu"
     
