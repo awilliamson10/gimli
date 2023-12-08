@@ -5,7 +5,9 @@ import functools
 from datasets import load_dataset, interleave_datasets
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-
+from torch.utils.data import random_split
+import os
+import numpy as np
 
 def process_shard(
     tokenizer: PreTrainedTokenizerBase, max_tokens: int, examples: List[str]
@@ -59,8 +61,21 @@ def collate_fn(batch):
 
 class Task:
     @staticmethod
-    def iter_batches(batch_size, device, num_workers, **dataset_kwargs):
-        dataset = load_pretraining_dataset(**dataset_kwargs)
+    def prepare_data(save_dir, steps, val_size, **kwargs):
+        dataset = load_pretraining_dataset(**kwargs)
+        train_dataset, val_dataset = random_split(dataset, [steps, val_size])
+        with open(os.path.join(save_dir, 'train_data.bin'), 'wb') as f:
+            np.array(train_dataset, dtype=np.uint16).tofile(f)
+        with open(os.path.join(save_dir, 'val_data.bin'), 'wb') as f:
+            np.array(val_dataset, dtype=np.uint16).tofile(f)
+
+    @staticmethod
+    def iter_batches(batch_size, device, num_workers, split='train', **dataset_kwargs):
+        data_path = os.path.join(dataset_kwargs['dir'], f'{split}_data.bin')
+        if not os.path.exists(data_path):
+            raise FileNotFoundError(f'{data_path} not found')
+        dataset = np.memmap(data_path, dtype=np.uint16, mode='r')
+        dataset = torch.from_numpy(dataset.astype(np.int64))
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -71,3 +86,4 @@ class Task:
             x = batch["input_ids"].to(device, non_blocking=True)
             y = batch["labels"].to(device, non_blocking=True)
             yield x, y
+

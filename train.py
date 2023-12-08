@@ -49,11 +49,11 @@ def setup_ddp():
 
 def init_model(init_from, model_args):
     if init_from == "scratch":
-        print(f"Initializing model from scratch")
+        print("Initializing model from scratch")
         model_args = ModelArgs(**model_args)
         model = Transformer(model_args)
     elif init_from == "checkpoint":
-        raise NotImplementedError(f"Checkpoint init not implemented yet")
+        raise NotImplementedError("Checkpoint init not implemented yet")
     else:
         raise ValueError(f"Unknown init_from: {init_from}")
     if config.compile:
@@ -89,7 +89,7 @@ def train(
     master_process=True,
     ddp=False,
 ):
-    train_batch_iter = iter_batches()
+    train_batch_iter = iter_batches(split="train")
     X, Y = next(train_batch_iter)
 
     global_step = 0
@@ -101,7 +101,7 @@ def train(
             out = {}
             model.eval()
             for split in ["train", "val"]:
-                batch_iter = iter_batches()
+                batch_iter = iter_batches(split=split)
                 losses = torch.zeros(config.eval_iters)  # keep on CPU
                 for i in range(config.eval_iters):
                     with torch.no_grad():
@@ -250,18 +250,31 @@ def main():
 
     tokenizer = load_tokenizer(config.tokenizer_config)
 
+    # prepare data
+    if master_process:
+        # check if data is already prepared
+        if os.path.exists(os.path.join(config.out_dir, "train_data.bin")):
+            print("Data already prepared, skipping data preparation")
+        else:
+            print("Preparing data...")
+            Task.prepare_data(
+                config.out_dir,
+                config.max_iters,
+                config.eval_iters,
+                max_seq_len=config.max_seq_len,
+                tokenizer=tokenizer,
+                path=config.dataset_path,
+                interleave=config.interleave_datasets,
+                probs=config.dataset_probs,
+                seed=config.dataset_seed,
+            )
+
     # task-specific setup
     iter_batches = partial(
         Task.iter_batches,
         batch_size=config.batch_size,
         device=config.device,
         num_workers=0,
-        max_seq_len=config.max_seq_len,
-        tokenizer=tokenizer,
-        dataset_path=config.dataset_path,
-        interleave=config.interleave_datasets,
-        probs=config.dataset_probs,
-        seed=config.dataset_seed,
     )
 
     # model init
