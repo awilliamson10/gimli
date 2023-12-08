@@ -1,11 +1,14 @@
 import math
 
+
 def assign_learning_rate(optimizer, new_lr):
     for param_group in optimizer.param_groups:
         param_group["lr"] = new_lr
 
+
 def warmup(learning_rate, step, warmup_steps):
     return learning_rate * step / warmup_steps
+
 
 # learning rate decay scheduler (cosine with warmup)
 def lr_scheduler(optimizer, learning_rate, warmup_steps, decay_steps, min_lr):
@@ -23,4 +26,5 @@ def lr_scheduler(optimizer, learning_rate, warmup_steps, decay_steps, min_lr):
             coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
             lr = min_lr + coeff * (learning_rate - min_lr)
         assign_learning_rate(optimizer, lr)
+
     return _lr_adjuster

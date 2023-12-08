@@ -33,6 +33,7 @@ from gimli.export import model_export
 from gimli.config import global_config
 
 import torch._dynamo
+
 torch._dynamo.config.suppress_errors = True
 
 config = global_config
@@ -41,7 +42,9 @@ min_lr = 0.0  # minimum learning rate, should be ~= learning_rate/10 per Chinchi
 
 # validating checks
 assert config.vocab_source in ["llama2", "custom"]
-assert config.vocab_source == "custom" or config.vocab_size == 32000, "The vocab from Meta has 32K tokens"
+assert (
+    config.vocab_source == "custom" or config.vocab_size == 32000
+), "The vocab from Meta has 32K tokens"
 
 # various inits, derived attributes, I/O setup
 ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
@@ -63,19 +66,32 @@ else:
     master_process = True
     seed_offset = 0
     ddp_world_size = 1
-tokens_per_iter = config.gradient_accumulation_steps * ddp_world_size * config.batch_size * config.max_seq_len
+tokens_per_iter = (
+    config.gradient_accumulation_steps
+    * ddp_world_size
+    * config.batch_size
+    * config.max_seq_len
+)
 if master_process:
     print(f"tokens per iteration will be: {tokens_per_iter:,}")
-    print(f"breaks down as: {config.gradient_accumulation_steps} grad accum steps * {ddp_world_size} processes * {config.batch_size} batch size * {config.max_seq_len} max seq len")
+    print(
+        f"breaks down as: {config.gradient_accumulation_steps} grad accum steps * {ddp_world_size} processes * {config.batch_size} batch size * {config.max_seq_len} max seq len"
+    )
 
 if master_process:
     os.makedirs(config.out_dir, exist_ok=True)
 torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
-device_type = "cuda" if "cuda" in config.device else "cpu"  # for later use in torch.autocast
+device_type = (
+    "cuda" if "cuda" in config.device else "cpu"
+)  # for later use in torch.autocast
 # note: float16 data type will automatically use a GradScaler
-ptdtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[config.dtype]
+ptdtype = {
+    "float32": torch.float32,
+    "bfloat16": torch.bfloat16,
+    "float16": torch.float16,
+}[config.dtype]
 ctx = (
     nullcontext()
     if device_type == "cpu"
@@ -121,7 +137,15 @@ elif config.init_from == "resume":
     checkpoint_model_args = checkpoint["model_args"]
     # force these config attributes to be equal otherwise we can't even resume training
     # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ["dim", "n_layers", "n_heads", "n_kv_heads", "vocab_size", "multiple_of", "max_seq_len"]:
+    for k in [
+        "dim",
+        "n_layers",
+        "n_heads",
+        "n_kv_heads",
+        "vocab_size",
+        "multiple_of",
+        "max_seq_len",
+    ]:
         model_args[k] = checkpoint_model_args[k]
     # create the model
     gptconf = ModelArgs(**model_args)
@@ -142,7 +166,9 @@ model.to(config.device)
 scaler = torch.cuda.amp.GradScaler(enabled=(config.dtype == "float16"))
 
 # optimizer
-optimizer = model.configure_optimizers(config.weight_decay, config.learning_rate, (config.beta1, config.beta2), device_type)
+optimizer = model.configure_optimizers(
+    config.weight_decay, config.learning_rate, (config.beta1, config.beta2), device_type
+)
 if config.init_from == "resume" and "optimizer" in checkpoint:
     optimizer.load_state_dict(checkpoint["optimizer"])
 checkpoint = None  # free up memory
@@ -160,6 +186,7 @@ if ddp:
     prefix = "_orig_mod." if compile else ""
     model._ddp_params_and_buffers_to_ignore = {prefix + "freqs_cis"}
     model = DDP(model, device_ids=[ddp_local_rank])
+
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
@@ -179,6 +206,7 @@ def estimate_loss():
     model.train()
     return out
 
+
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps
@@ -193,9 +221,11 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
     return min_lr + coeff * (config.learning_rate - min_lr)
 
+
 # logging
 if config.wandb_log and master_process:
     import wandb
+
     wandb.init(project=config.wandb_project, name=config.wandb_run_name, config=config)
 
 # training loop
@@ -214,7 +244,9 @@ while True:
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % config.eval_interval == 0 and master_process:
         losses = estimate_loss()
-        print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(
+            f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
+        )
         if config.wandb_log:
             try:
                 wandb.log(
@@ -225,7 +257,8 @@ while True:
                         "loss/val": losses["val"],
                         "lr": lr,
                         "mfu": running_mfu * 100,  # convert to percentage
-                    }, step = iter_num
+                    },
+                    step=iter_num,
                 )
             except Exception as e:
                 print(f"logging to wandb failed: {e}")
@@ -242,7 +275,9 @@ while True:
                 }
                 print(f"saving checkpoint to {config.out_dir}")
                 torch.save(checkpoint, os.path.join(config.out_dir, "ckpt.pt"))
-                model_export(raw_model, os.path.join(config.out_dir, "model.bin"), version=0)
+                model_export(
+                    raw_model, os.path.join(config.out_dir, "model.bin"), version=0
+                )
     if iter_num == 0 and config.eval_only:
         break
 
@@ -254,7 +289,9 @@ while True:
             # the official way to do this is with model.no_sync() context manager, but
             # I really dislike that this bloats the code and forces us to repeat code
             # looking at the source of that context manager, it just toggles this variable
-            model.require_backward_grad_sync = micro_step == config.gradient_accumulation_steps - 1
+            model.require_backward_grad_sync = (
+                micro_step == config.gradient_accumulation_steps - 1
+            )
         with ctx:
             logits = model(X, Y)
             loss = raw_model.last_loss
@@ -281,7 +318,9 @@ while True:
         # get loss as float, scale up due to the divide above. note: this is a CPU-GPU sync point
         lossf = loss.item() * config.gradient_accumulation_steps
         if local_iter_num >= 5:  # let the training loop settle a bit
-            mfu = raw_model.estimate_mfu(config.batch_size * config.gradient_accumulation_steps, dt)
+            mfu = raw_model.estimate_mfu(
+                config.batch_size * config.gradient_accumulation_steps, dt
+            )
             running_mfu = mfu if running_mfu == -1.0 else 0.9 * running_mfu + 0.1 * mfu
         print(
             f"{iter_num} | loss {lossf:.4f} | lr {lr:e} | {dt*1000:.2f}ms | mfu {running_mfu*100:.2f}%"

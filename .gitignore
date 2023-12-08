@@ -1,7 +1,10 @@
 __pycache__
+.DS_Store
 .env
 
 *.json
 *.bin
 *.zip
 *.tar.gz
+
+*.ipynb

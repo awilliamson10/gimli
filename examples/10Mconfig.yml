@@ -43,3 +43,8 @@ warmup_iters: 50  # How many steps to warm up for
 device: "mps"  # Examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc., or try 'mps' on MacBooks
 dtype: "bfloat16"  # Examples: 'float32', 'float16', 'bfloat16'
 compile: True  # Use PyTorch 2.0 to compile the model to be faster
+
+# dataset
+dataset_path: "data/wikitext-2"  # Path to the dataset
+interleave_datasets: False  # Whether to interleave multiple datasets
+dataset_probs: [1.0]  # Probabilities for each dataset, must sum to 1.0

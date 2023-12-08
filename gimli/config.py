@@ -3,12 +3,15 @@ import sys
 import yaml
 from ast import literal_eval
 from datetime import datetime
+from gimli.tokenizer import TokenizerConfig
+
 
 @dataclass
 class TrainConfiguration:
     """
     A dataclass that holds the configuration for training.
     """
+
     # Data related configs
     batch_size: int = 128
     max_seq_len: int = 512
@@ -41,7 +44,7 @@ class TrainConfiguration:
     dtype: str = "bfloat16"
     compile: bool = True
     num_processes: int = 1
-    
+
     # Training
     out_dir: str = "out"
     eval_interval: int = 2000
@@ -54,28 +57,39 @@ class TrainConfiguration:
     wandb_project: str = "gimli_math"
     wandb_run_name: str = "run" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
+    # Dataset
+    dataset_path: str = "data/llama2"
+    interleave_datasets: bool = False
+    dataset_probs: list = []
+    dataset_seed: int = 42
+
+    # Tokenizer
+    tokenizer_config: TokenizerConfig = TokenizerConfig()
+
     @property
     def lr_decay_iters(self):
         return self.max_iters
-    
+
     @property
     def min_lr(self):
         return 0.0
-    
+
     @property
     def device_type(self):
         return "cuda" if self.device.startswith("cuda") else "cpu"
-    
+
+
 def from_yaml_to_train_config(yaml_file):
-    with open(yaml_file, 'r') as f:
+    with open(yaml_file, "r") as f:
         config_dict = yaml.safe_load(f)
         assert isinstance(config_dict, dict)
         return TrainConfiguration(**config_dict)
 
+
 def override_train_config_with_args(train_config, args):
     for arg in args:
-        if arg.startswith('--'):
-            key_val_pair = arg[2:].split('=')
+        if arg.startswith("--"):
+            key_val_pair = arg[2:].split("=")
             if len(key_val_pair) == 2:
                 key, val = key_val_pair
                 if hasattr(train_config, key):
@@ -84,7 +98,9 @@ def override_train_config_with_args(train_config, args):
                     if isinstance(new_val, type(old_val)):
                         setattr(train_config, key, new_val)
                     else:
-                        raise TypeError(f'Type of {key} should be {type(old_val)}, but got {type(new_val)}')
+                        raise TypeError(
+                            f"Type of {key} should be {type(old_val)}, but got {type(new_val)}"
+                        )
                 else:
                     raise ValueError(f"Unknown config key: {key}")
             else:
@@ -92,11 +108,12 @@ def override_train_config_with_args(train_config, args):
         else:
             raise ValueError(f"Unknown argument format: {arg}")
 
+
 # Parsing command line arguments
 config = TrainConfiguration()
 for arg in sys.argv[1:]:
-    if arg.startswith('--config='):
-        config_file = arg.split('=')[1]
+    if arg.startswith("--config="):
+        config_file = arg.split("=")[1]
         print(f"Loading configuration from {config_file}")
         config = from_yaml_to_train_config(config_file)
     else:

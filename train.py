@@ -12,12 +12,15 @@ import torch
 from gimli.config import global_config as config
 from gimli.export import model_export
 from functools import partial
-from gimli.tinystories import Task
+from gimli.pretrain_data import Task
 from gimli.model import Transformer, ModelArgs
 from gimli.scheduler import lr_scheduler
+from gimli.tokenizer import load_tokenizer
 from torch.distributed import init_process_group, destroy_process_group
 import torch._dynamo
+
 torch._dynamo.config.suppress_errors = True
+
 
 def setup_ddp():
     ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
@@ -30,8 +33,12 @@ def setup_ddp():
         torch.cuda.set_device(device)
         master_process = ddp_rank == 0
         seed_offset = ddp_rank
-        assert config.gradient_accumulation_steps % ddp_world_size == 0, "gradient_accumulation_steps must be divisible by the number of ddp processes"
-        config.gradient_accumulation_steps = config.gradient_accumulation_steps // ddp_world_size
+        assert (
+            config.gradient_accumulation_steps % ddp_world_size == 0
+        ), "gradient_accumulation_steps must be divisible by the number of ddp processes"
+        config.gradient_accumulation_steps = (
+            config.gradient_accumulation_steps // ddp_world_size
+        )
     else:
         master_process = True
         seed_offset = 0
@@ -55,7 +62,9 @@ def init_model(init_from, model_args):
     return model
 
 
-def save_checkpoint(out_dir, model, optimizer, model_args, iter_num, best_val_loss, config):
+def save_checkpoint(
+    out_dir, model, optimizer, model_args, iter_num, best_val_loss, config
+):
     checkpoint = {
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
@@ -69,8 +78,18 @@ def save_checkpoint(out_dir, model, optimizer, model_args, iter_num, best_val_lo
     model_export(model, os.path.join(out_dir, "model.bin"), version=0)
 
 
-def train(model, optimizer, scheduler, scaler, iter_batches, model_args, ctx, master_process=True, ddp=False):
-    train_batch_iter = iter_batches(split="train")
+def train(
+    model,
+    optimizer,
+    scheduler,
+    scaler,
+    iter_batches,
+    model_args,
+    ctx,
+    master_process=True,
+    ddp=False,
+):
+    train_batch_iter = iter_batches()
     X, Y = next(train_batch_iter)
 
     global_step = 0
@@ -82,8 +101,8 @@ def train(model, optimizer, scheduler, scaler, iter_batches, model_args, ctx, ma
             out = {}
             model.eval()
             for split in ["train", "val"]:
-                batch_iter = iter_batches(split=split)
-                losses = torch.zeros(config.eval_iters) # keep on CPU
+                batch_iter = iter_batches()
+                losses = torch.zeros(config.eval_iters)  # keep on CPU
                 for i in range(config.eval_iters):
                     with torch.no_grad():
                         X, Y = next(batch_iter)
@@ -92,7 +111,9 @@ def train(model, optimizer, scheduler, scaler, iter_batches, model_args, ctx, ma
                             loss = loss.item()
                     losses[i] = loss
                 out[f"{split}"] = losses.mean()
-            print(f"global_step: {global_step}, train_loss: {out['train']:.4f}, val_loss: {out['val']:.4f}")
+            print(
+                f"global_step: {global_step}, train_loss: {out['train']:.4f}, val_loss: {out['val']:.4f}"
+            )
             if config.wandb_log:
                 try:
                     wandb.log(
@@ -124,7 +145,9 @@ def train(model, optimizer, scheduler, scaler, iter_batches, model_args, ctx, ma
 
         for micro_step in range(config.gradient_accumulation_steps):
             if ddp:
-                model.require_backward_grad_sync = micro_step == config.gradient_accumulation_steps - 1
+                model.require_backward_grad_sync = (
+                    micro_step == config.gradient_accumulation_steps - 1
+                )
             with ctx:
                 _, loss = model(X, Y)
                 loss = model.last_loss
@@ -180,13 +203,22 @@ def train(model, optimizer, scheduler, scaler, iter_batches, model_args, ctx, ma
 def main():
     # validating checks
     assert config.vocab_source in ["llama2", "custom"]
-    assert config.vocab_source == "custom" or config.vocab_size == 32000, "The vocab from Meta has 32K tokens"
+    assert (
+        config.vocab_source == "custom" or config.vocab_size == 32000
+    ), "The vocab from Meta has 32K tokens"
 
     ddp, master_process, seed_offset, ddp_world_size, ddp_local_rank = setup_ddp()
-    tokens_per_iter = config.gradient_accumulation_steps * ddp_world_size * config.batch_size * config.max_seq_len
+    tokens_per_iter = (
+        config.gradient_accumulation_steps
+        * ddp_world_size
+        * config.batch_size
+        * config.max_seq_len
+    )
     if master_process:
         print(f"tokens per iteration will be: {tokens_per_iter:,}")
-        print(f"breaks down as: {config.gradient_accumulation_steps} grad accum steps * {ddp_world_size} processes * {config.batch_size} batch size * {config.max_seq_len} max seq len")
+        print(
+            f"breaks down as: {config.gradient_accumulation_steps} grad accum steps * {ddp_world_size} processes * {config.batch_size} batch size * {config.max_seq_len} max seq len"
+        )
         # create output directory
         print(f"Creating output directory: {config.out_dir}")
         os.makedirs(config.out_dir, exist_ok=True)
@@ -201,24 +233,35 @@ def main():
     torch.manual_seed(1337 + seed_offset)
     torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
-    device_type = "cuda" if "cuda" in config.device else "cpu"  # for later use in torch.autocast
+    device_type = (
+        "cuda" if "cuda" in config.device else "cpu"
+    )  # for later use in torch.autocast
     # note: float16 data type will automatically use a GradScaler
-    ptdtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[config.dtype]
+    ptdtype = {
+        "float32": torch.float32,
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+    }[config.dtype]
     ctx = (
         nullcontext()
         if device_type == "cpu"
         else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
     )
 
+    tokenizer = load_tokenizer(config.tokenizer_config)
+
     # task-specific setup
     iter_batches = partial(
         Task.iter_batches,
         batch_size=config.batch_size,
-        max_seq_len=config.max_seq_len,
-        vocab_size=config.vocab_size,
-        vocab_source=config.vocab_source,
         device=config.device,
         num_workers=0,
+        max_seq_len=config.max_seq_len,
+        tokenizer=tokenizer,
+        dataset_path=config.dataset_path,
+        interleave=config.interleave_datasets,
+        probs=config.dataset_probs,
+        seed=config.dataset_seed,
     )
 
     # model init
@@ -243,7 +286,12 @@ def main():
     model.to(config.device)
 
     # optimizer
-    optimizer = model.configure_optimizers(config.weight_decay, config.learning_rate, (config.beta1, config.beta2), config.device_type)
+    optimizer = model.configure_optimizers(
+        config.weight_decay,
+        config.learning_rate,
+        (config.beta1, config.beta2),
+        config.device_type,
+    )
     scheduler = lr_scheduler(
         optimizer,
         config.learning_rate,
@@ -252,14 +300,25 @@ def main():
         config.min_lr,
     )
     scaler = torch.cuda.amp.GradScaler(enabled=(config.dtype == "float16"))
-    
+
     # training loop
-    train(model, optimizer, scheduler, scaler, iter_batches, model_args, ctx, master_process, ddp)
+    train(
+        model,
+        optimizer,
+        scheduler,
+        scaler,
+        iter_batches,
+        model_args,
+        ctx,
+        master_process,
+        ddp,
+    )
 
     if ddp:
         destroy_process_group()
 
     print("Training finished!")
-    
+
+
 if __name__ == "__main__":
     main()
