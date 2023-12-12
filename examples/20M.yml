@@ -1,33 +1,32 @@
 # I/O
 out_dir: "out"
-eval_interval: 250000
+eval_interval: 100
 log_interval: 1
-eval_iters: 10
+eval_iters: 100
 eval_only: False  # If True, script exits right after the first eval
 always_save_checkpoint: False  # If True, always save a checkpoint after each eval
 init_from: "scratch"  # 'scratch' or 'resume'
 
 # wandb logging
 wandb_log: False
-wandb_project: "gimli_math"
-wandb_run_name: "run<timestamp-placeholder>"  # Placeholder for dynamic timestamp.
+wandb_project: "gimli"
 
 # data
-batch_size: 4  # If gradient_accumulation_steps > 1, this is the micro-batch size
-max_seq_len: 512
+batch_size: 2  # If gradient_accumulation_steps > 1, this is the micro-batch size
+max_seq_len: 256
 vocab_source: "llama2"  # llama2 or custom; use Llama 2 vocab from Meta, or custom trained
 vocab_size: 32000  # The Llama 2 tokenizer has 32K tokens
 
 # model
-dim: 256
-n_layers: 4
-n_heads: 4
-n_kv_heads: 4
+dim: 320
+n_layers: 6
+n_heads: 8
+n_kv_heads: 8
 multiple_of: 32
 dropout: 0.0
 
 # adamw optimizer
-gradient_accumulation_steps: 4  # Used to simulate larger batch sizes
+gradient_accumulation_steps: 3  # Used to simulate larger batch sizes
 learning_rate: 0.00005 # Max learning rate
 max_iters: 1000  # Total number of training iterations
 weight_decay: 0.1
@@ -43,8 +42,3 @@ warmup_iters: 50  # How many steps to warm up for
 device: "mps"  # Examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc., or try 'mps' on MacBooks
 dtype: "bfloat16"  # Examples: 'float32', 'float16', 'bfloat16'
 compile: True  # Use PyTorch 2.0 to compile the model to be faster
-
-# dataset
-dataset_path: "data/wikitext-2"  # Path to the dataset
-interleave_datasets: False  # Whether to interleave multiple datasets
-dataset_probs: [1.0]  # Probabilities for each dataset, must sum to 1.0

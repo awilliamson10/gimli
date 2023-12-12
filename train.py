@@ -3,21 +3,24 @@ This training script can be run both on a single gpu in debug mode, and also in 
 
 - You can run this script on a single gpu with the following command:
     python gimli/train.py --config=configs/train_config.yaml
+    
 """
 import os
-import wandb
-from torch.nn.parallel import DistributedDataParallel as DDP
 from contextlib import nullcontext
+from functools import partial
+
 import torch
+import torch._dynamo
+import wandb
+from torch.distributed import destroy_process_group, init_process_group
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 from gimli.config import global_config as config
 from gimli.export import model_export
-from functools import partial
-from gimli.pretrain_data import Task
-from gimli.model import Transformer, ModelArgs
+from gimli.model import ModelArgs, Transformer
 from gimli.scheduler import lr_scheduler
+from gimli.task import Task
 from gimli.tokenizer import load_tokenizer
-from torch.distributed import init_process_group, destroy_process_group
-import torch._dynamo
 
 torch._dynamo.config.suppress_errors = True
 
@@ -97,7 +100,7 @@ def train(
 
     while True:
         scheduler(step=global_step)
-        if global_step % config.eval_interval == 0 and master_process:
+        if ((global_step % config.eval_interval == 0) or (global_step >= config.max_iters)) and master_process:
             out = {}
             model.eval()
             for split in ["train", "val"]:
@@ -185,6 +188,12 @@ def train(
         global_step += 1
 
         if global_step >= config.max_iters:
+
+            print(" *---- Finished training ----* ")
+            print(f"Saving checkpoint at global_step: {global_step}")
+            print(f"Best validation loss: {best_val_loss:.4f}")
+            print(f"Final learning rate: {optimizer.param_groups[0]['lr']:.2e}")
+            print(f"Final iteration: {global_step}")
             break
 
     # save final checkpoint
@@ -253,28 +262,39 @@ def main():
     # prepare data
     if master_process:
         # check if data is already prepared
-        if os.path.exists(os.path.join(config.out_dir, "train_data.bin")):
-            print("Data already prepared, skipping data preparation")
+        if config.dataset_directory.exists():
+            print("Data already prepared!")
         else:
             print("Preparing data...")
-            Task.prepare_data(
-                config.out_dir,
-                config.max_iters,
-                config.eval_iters,
-                max_seq_len=config.max_seq_len,
-                tokenizer=tokenizer,
-                path=config.dataset_path,
-                interleave=config.interleave_datasets,
-                probs=config.dataset_probs,
-                seed=config.dataset_seed,
+            Task.packed_prepare(
+                tokenizer,
+                config.datasets,
+                config.dataset_directory,
+                config.chunk_size,
+                eval_iters=config.eval_iters,
             )
+    else:
+        # wait for master process to prepare data
+        while not config.dataset_directory.exists():
+            pass
+
+    train_dataloader, val_dataloader = Task.create_dataloaders(
+        config.batch_size,
+        config.max_seq_len,
+        config.dataset_directory,
+        config.datasets,
+        validation = True if config.eval_iters > 0 else False,
+        seed=12345 + seed_offset,
+        num_workers=0,
+    )
 
     # task-specific setup
     iter_batches = partial(
         Task.iter_batches,
-        batch_size=config.batch_size,
+        max_seq_len=config.max_seq_len,
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
         device=config.device,
-        num_workers=0,
     )
 
     # model init
@@ -330,7 +350,7 @@ def main():
     if ddp:
         destroy_process_group()
 
-    print("Training finished!")
+    print(" *---- Finished training ----* ")
 
 
 if __name__ == "__main__":

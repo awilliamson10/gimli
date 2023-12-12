@@ -2,9 +2,11 @@ from dataclasses import dataclass
 import sys
 import yaml
 from ast import literal_eval
-from datetime import datetime
+from typing import Optional
 from gimli.tokenizer import TokenizerConfig
-
+from typing import List, Tuple
+from pathlib import Path
+import dataclasses
 
 @dataclass
 class TrainConfiguration:
@@ -29,7 +31,7 @@ class TrainConfiguration:
     # AdamW Optimizer
     gradient_accumulation_steps: int = 4
     learning_rate: float = 5e-4
-    max_iters: int = 100000
+    max_iters: int = 100
     weight_decay: float = 1e-1
     beta1: float = 0.9
     beta2: float = 0.95
@@ -47,24 +49,31 @@ class TrainConfiguration:
 
     # Training
     out_dir: str = "out"
-    eval_interval: int = 2000
+    eval_interval: int = 0
     log_interval: int = 1
-    eval_iters: int = 100
+    eval_iters: int = 0
     eval_only: bool = False
     always_save_checkpoint: bool = False
     init_from: str = "scratch"
     wandb_log: bool = True
     wandb_project: str = "gimli_math"
-    wandb_run_name: str = "run" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    wandb_run_name: Optional[str] = None
 
     # Dataset
-    dataset_path: str = "data/llama2"
-    interleave_datasets: bool = False
-    dataset_probs: list = []
-    dataset_seed: int = 42
+    datasets: List[Tuple[str, float]] = dataclasses.field(default_factory=lambda: [
+        ("JeanKaddour/minipile", 100.0)
+    ])
+    dataset_dir: str = "data"
+    chunk_size: int = 2048
 
-    # Tokenizer
-    tokenizer_config: TokenizerConfig = TokenizerConfig()
+    @property
+    def tokenizer_config(self):
+        return TokenizerConfig()
+
+    @property
+    def dataset_directory(self):
+        # combine dataset_dir with out_dir
+        return Path(self.out_dir) / Path(self.dataset_dir)
 
     @property
     def lr_decay_iters(self):

@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Optional
-from transformers import AutoTokenizer, AddedToken
+
 import transformers
+from transformers import AddedToken, AutoTokenizer
 
 LLAMA_DEFAULT_EOS_TOKEN = "</s>"
-
 
 @dataclass
 class TokenizerConfig:
@@ -14,10 +14,11 @@ class TokenizerConfig:
     trust_remote_code: Optional[bool] = False
     special_tokens: Optional[dict] = None
     tokens: Optional[list] = None
+    add_bos_token: Optional[bool] = True
+    add_eos_token: Optional[bool] = False
 
 
-def load_tokenizer(cfg):
-    tokenizer_kwargs = {}
+def load_tokenizer(cfg, **tokenizer_kwargs):
     use_fast = True  # this is the default
 
     if cfg.use_fast is not None:
