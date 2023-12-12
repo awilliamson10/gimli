@@ -1,7 +1,7 @@
 ## Gimli
 
 <p align="center">
-  <img src="assets/gimli-llama.png" width="500" height="300" alt="Gimli LOTR">
+  <img src="assets/gimli-llama.png" width="500" height="450" alt="Gimli LOTR">
 </p>
 
 Have you ever wanted to inference a small LLM in pure C? No? Well, how about pretrain a similar model completely from scratch? Still, no? Oh well, I guess I'll just leave this here then.
