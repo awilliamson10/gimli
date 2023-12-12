@@ -1,7 +1,7 @@
 ## Gimli
 
 <p align="center">
-  <img src="assets/gimli.webp" width="500" height="300" alt="Gimli LOTR">
+  <img src="assets/gimli-llama.png" width="500" height="300" alt="Gimli LOTR">
 </p>
 
 Have you ever wanted to inference a small LLM in pure C? No? Well, how about pretrain a similar model completely from scratch? Still, no? Oh well, I guess I'll just leave this here then.
@@ -12,15 +12,6 @@ This began as a small toy fork of [llama2.c](https://github.com/karpathy/llama2.
 
 ## training
 
-Let's see how we can train a baby Llama 2 from scratch using the code in this repo. 
-
 ```bash
-python gimli/download.py
-# python tinystories.py pretokenize TODO: ADD PRETOKENIZE
-```
-
-Then train our model:
-
-```bash
-python train.py
+python train.py # OPTIONAL: --config=examples/20M.yml
 ```
