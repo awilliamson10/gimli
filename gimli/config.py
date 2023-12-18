@@ -1,12 +1,14 @@
-from dataclasses import dataclass
-import sys
-import yaml
-from ast import literal_eval
-from typing import Optional
-from gimli.tokenizer import TokenizerConfig
-from typing import List, Tuple
-from pathlib import Path
 import dataclasses
+import sys
+from ast import literal_eval
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+import yaml
+
+from gimli.tokenizer import TokenizerConfig
+
 
 @dataclass
 class TrainConfiguration:
@@ -64,7 +66,7 @@ class TrainConfiguration:
         ("JeanKaddour/minipile", 100.0)
     ])
     dataset_dir: str = "data"
-    chunk_size: int = 2048
+    chunk_size: int = 2049 * 1024 # 2048 block size + 1 for causal (from LLama), 1024 blocks
 
     @property
     def tokenizer_config(self):

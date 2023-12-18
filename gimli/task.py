@@ -1,5 +1,7 @@
 import glob
 import os
+from functools import partial
+from multiprocessing import Pool
 from typing import Optional, Tuple
 
 import numpy as np
@@ -60,10 +62,9 @@ class Task:
                 vocab_size=tokenizer.vocab_size,
             )
 
-        for ds, _ in datasets:
-            dataset = load_dataset(ds, streaming=True, split="train")
+        def process_dataset(ds, split, eval_iters, tokenizer, builder):
+            dataset = load_dataset(ds, split=split)
             dataset = dataset.shuffle(seed=42)
-            builder = create_builder(ds, "val")
             for i, line in tqdm.tqdm(enumerate(dataset)):
                 if i < eval_iters:
                     text = line["text"]
@@ -77,6 +78,10 @@ class Task:
                     text_ids = tokenizer.encode(text)
                     builder.add_array(np.array(text_ids, dtype=builder.dtype))
             builder.write_reminder()
+
+        with Pool() as pool:
+            func = partial(process_dataset, split="train", eval_iters=eval_iters, tokenizer=tokenizer, builder=create_builder)
+            pool.map(func, datasets)
 
 
     @staticmethod
@@ -133,5 +138,3 @@ class Task:
             input_ids = input_ids.to(device)
             targets = targets.to(device)
             yield input_ids, targets
-
-            
