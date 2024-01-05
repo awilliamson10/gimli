@@ -17,15 +17,12 @@ from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from gimli.config import global_config as config
-
-# from gimli.task import Task
 from gimli.dataset import Task
 from gimli.export import export_lora, load_checkpoint, model_export
 from gimli.model import ModelArgs, Transformer, apply_lora
 from gimli.scheduler import lr_scheduler
 
 torch._dynamo.config.suppress_errors = True
-
 
 def setup_ddp():
     ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
