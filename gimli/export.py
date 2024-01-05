@@ -14,12 +14,12 @@ Among the "output" versions of .bin files:
 
 This script aspires to provide all of these conversions.
 """
-import os
+import argparse
 import gzip
+import json
+import os
 import shutil
 import struct
-import argparse
-import json
 from pathlib import Path
 
 import numpy as np
@@ -413,6 +413,60 @@ def hf_export(llama_model, filepath, group_size=64, dtype=torch.float32):
     # Save the state dictionary in .bin format, and config as .json
     torch.save(hf_state_dict, os.path.join(filepath, "pytorch_model.bin"))
     config.save_pretrained(filepath)
+
+
+def export_lora(model, filepath, lora_modules=["wq", "wk", "wv", "wo"]):
+    """Export the LoRA layer weights in full float32 .bin file to be read from C."""
+    version = 1
+
+    out_file = open(filepath, "wb")
+    # first write out the header. the header will be 256 bytes
+    # 1) write magic, which will be uint32 of "ak42" in ASCII
+    out_file.write(struct.pack("I", 0x616B3432))
+    # 2) write version, which will be int
+    out_file.write(struct.pack("i", version))
+    # 3) write the params, which will be 7 ints
+    p = model.params
+    hidden_dim = model.layers[0].feed_forward.w1.weight.shape[0]
+    n_kv_heads = p.n_heads if p.n_kv_heads is None else p.n_kv_heads
+    header = struct.pack(
+        "iiiiiii",
+        p.dim,
+        hidden_dim,
+        p.n_layers,
+        p.n_heads,
+        n_kv_heads,
+        p.vocab_size,
+        p.max_seq_len,
+    )
+    out_file.write(header)
+    # 4) write some other flags
+    shared_classifier = torch.equal(model.tok_embeddings.weight, model.output.weight)
+    out_file.write(struct.pack("B", int(shared_classifier)))
+    pad = 256 - out_file.tell()  # pad rest with zeros; tell returns current pos
+    assert pad >= 0
+    out_file.write(b"\0" * pad)
+
+    # now let's write out all the params
+    weights = []
+    for module in lora_modules:
+        if module == "wq":
+            weights.extend([layer.attention.wq.weight for layer in model.layers])
+        elif module == "wk":
+            weights.extend([layer.attention.wk.weight for layer in model.layers])
+        elif module == "wv":
+            weights.extend([layer.attention.wv.weight for layer in model.layers])
+        elif module == "wo":
+            weights.extend([layer.attention.wo.weight for layer in model.layers])
+
+    if not shared_classifier:
+        weights.append(model.output.weight)
+    for w in weights:
+        serialize_fp32(out_file, w)
+
+    # write to binary file
+    out_file.close()
+    print(f"wrote {filepath}")
 
 
 # -----------------------------------------------------------------------------

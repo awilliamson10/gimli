@@ -1,0 +1,46 @@
+# I/O
+out_dir: "tinystory"
+eval_interval: 10
+log_interval: 1
+eval_iters: 20
+eval_only: False  # If True, script exits right after the first eval
+always_save_checkpoint: False  # If True, always save a checkpoint after each eval
+init_from: "lora"  # 'scratch' or 'resume' or 'lora'
+
+# wandb logging
+wandb_log: False
+wandb_project: "gimli"
+
+# data
+batch_size: 1  # If gradient_accumulation_steps > 1, this is the micro-batch size
+max_seq_len: 256 # Max sequence length for input
+vocab_source: "llama2"  # llama2 or custom; use Llama 2 vocab from Meta, or custom trained
+vocab_size: 32000  # The Llama 2 tokenizer has 32K tokens
+
+# adamw optimizer
+gradient_accumulation_steps: 3  # Used to simulate larger batch sizes
+learning_rate: 0.00005 # Max learning rate
+max_iters: 100  # Total number of training iterations
+weight_decay: 0.1
+beta1: 0.9
+beta2: 0.95
+grad_clip: 1.0  # Clip gradients at this value, or disable if = 0.0
+
+# learning rate decay settings
+decay_lr: True  # Whether to decay the learning rate
+warmup_iters: 10  # How many steps to warm up for
+
+# system
+device: "mps"  # Examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc., or try 'mps' on MacBooks
+dtype: "bfloat16"  # Examples: 'float32', 'float16', 'bfloat16'
+compile: False  # Use PyTorch 2.0 to compile the model to be faster
+
+# dataset
+dataset_repo: "PocketDoc/RUCAIBox-Story-Generation-Alpaca"
+dataset_dir: "rucai"
+
+# lora
+lora_rank: 16
+lora_dropout: 0.1
+lora_alpha: 1.0
+

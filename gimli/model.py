@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.nn.utils import parametrize
 
 
 @dataclass
@@ -373,3 +374,44 @@ class Transformer(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
 
         return idx
+
+class LoRALinear(nn.Module):
+    """
+    LoRA: Low-Rank Adaptation of Large Language Models - https://arxiv.org/abs/2106.09685
+    Heavily inspired by minLoRA - https://github.com/cccntu/minLoRA
+    Leverages the parametrizations feature from pytorch. This allows us to add the LoRA
+    matrices to the weights during the forward pass rather than computing the modified
+    forward pass explicitly, i.e., we compute (W + BA)x rather than Wx + BAx.
+    """
+    def __init__(self, in_features, out_features, rank, dropout_p=0.0, alpha=1.0):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.rank = rank
+        self.dropout_p = dropout_p
+
+        self.lora_a = nn.Parameter(torch.zeros(rank, in_features))
+        self.lora_b = nn.Parameter(torch.zeros(out_features, rank))
+
+        nn.init.kaiming_uniform_(self.lora_a, a=math.sqrt(5))
+
+        self.scaling = alpha / rank
+        self.dropout = nn.Dropout(dropout_p)
+
+    def forward(self, weight):
+        return weight + torch.matmul(self.lora_b, self.dropout(self.lora_a)) * self.scaling
+
+def apply_lora(model: nn.Module, rank: int, alpha: float, dropout_p: float, target_modules=['wq', 'wk', 'wv', 'wo']):
+    def _apply_lora(module: nn.Module):
+        module_name = module.__class__.__name__
+        if module_name.split(".")[-1] in target_modules and hasattr(module, 'weight'):
+            fan_out, fan_in = module.weight.shape
+            parametrize.register_parametrization(module, 'weight', LoRALinear(fan_in, fan_out, rank, dropout_p, alpha))
+    model.apply(_apply_lora)
+
+def remove_lora(model: nn.Module, target_modules=['wq', 'wk', 'wv', 'wo']):
+    def _remove_lora(module: nn.Module):
+        module_name = module.__class__.__name__
+        if module_name.split(".")[-1] in target_modules and hasattr(module, 'weight'):
+            parametrize.remove_parametrizations(module, 'weight')
+    model.apply(_remove_lora)

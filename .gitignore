@@ -3,9 +3,10 @@ __pycache__
 .env
 
 *.json
-*.bin
 *.zip
 *.tar.gz
 
 *.ipynb
 .ruff_cache/
+
+*/data/*

@@ -10,7 +10,8 @@ import tqdm
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 
-from gimli.packed_data import CombinedDataset, PackedDataset, PackedDatasetBuilder
+from gimli.packed_data import (CombinedDataset, PackedDataset,
+                               PackedDatasetBuilder)
 
 
 def create_dataloader(
@@ -26,6 +27,7 @@ def create_dataloader(
     data = []
     for ds, _ in datasets:
         filenames = glob.glob(os.path.join(data_dir, f"{ds}_{split}_*.bin"))
+        print(f"Found {len(filenames)} files for {ds} {split} split.")
         dataset = PackedDataset(
             filenames, n_chunks=4, max_seq_len=max_seq_len, shuffle=shuffle, seed=seed,
             num_processes=1, process_rank=0,
@@ -41,9 +43,9 @@ def create_dataloader(
     sum_weights = sum(weights)
     weights = [el / sum_weights for el in weights]
 
-    combined_dataset = CombinedDataset(datasets=data, seed=seed, weights=weights)
+    # combined_dataset = CombinedDataset(datasets=data, seed=seed, weights=weights)
 
-    return DataLoader(combined_dataset, batch_size=batch_size, shuffle=False, pin_memory=True)
+    return DataLoader(data[0], batch_size=batch_size, shuffle=False, pin_memory=True)
 
 
 class Task:
@@ -52,8 +54,8 @@ class Task:
         destination_path.mkdir(parents=True, exist_ok=True)
         
         def create_builder(ds, split):
-            parent_path = destination_path / ds
-            parent_path.mkdir(parents=True, exist_ok=True)
+            parent_path = os.path.join(destination_path, ds)
+            os.makedirs(parent_path, exist_ok=True)
             return PackedDatasetBuilder(
                 outdir=destination_path,
                 prefix=ds + "_" + split,
@@ -63,7 +65,7 @@ class Task:
             )
 
         def process_dataset(ds, split, eval_iters, tokenizer, builder):
-            dataset = load_dataset(ds, split=split)
+            dataset = load_dataset(ds, split=split, streaming=True)
             dataset = dataset.shuffle(seed=42)
             for i, line in tqdm.tqdm(enumerate(dataset)):
                 if i < eval_iters:
@@ -79,9 +81,9 @@ class Task:
                     builder.add_array(np.array(text_ids, dtype=builder.dtype))
             builder.write_reminder()
 
-        with Pool() as pool:
-            func = partial(process_dataset, split="train", eval_iters=eval_iters, tokenizer=tokenizer, builder=create_builder)
-            pool.map(func, datasets)
+        for name, ratio in datasets:
+            builder = create_builder(name, "train")
+            process_dataset(name, "train", eval_iters, tokenizer, builder)
 
 
     @staticmethod

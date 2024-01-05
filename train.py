@@ -12,15 +12,17 @@ from functools import partial
 import torch
 import torch._dynamo
 import wandb
+from peft import LoraConfig, get_peft_model
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from gimli.config import global_config as config
-from gimli.export import model_export
-from gimli.model import ModelArgs, Transformer
+
+# from gimli.task import Task
+from gimli.dataset import Task
+from gimli.export import export_lora, load_checkpoint, model_export
+from gimli.model import ModelArgs, Transformer, apply_lora
 from gimli.scheduler import lr_scheduler
-from gimli.task import Task
-from gimli.tokenizer import load_tokenizer
 
 torch._dynamo.config.suppress_errors = True
 
@@ -50,13 +52,30 @@ def setup_ddp():
     return ddp, master_process, seed_offset, ddp_world_size, ddp_local_rank
 
 
-def init_model(init_from, model_args):
+def init_model(init_from, model_args, config):
     if init_from == "scratch":
         print("Initializing model from scratch")
         model_args = ModelArgs(**model_args)
         model = Transformer(model_args)
-    elif init_from == "checkpoint":
-        raise NotImplementedError("Checkpoint init not implemented yet")
+    elif init_from in ["checkpoint", "lora"]:
+        print("Initializing model from checkpoint")
+        model = load_checkpoint(os.path.join(config.out_dir, "ckpt.pt"))
+        if init_from == "lora":
+            config.out_dir = os.path.join(config.out_dir, "lora")
+            os.makedirs(config.out_dir, exist_ok=True)
+            print(f"Preparing to train with LoRA, saving to {config.out_dir}")
+            for name, param in model.named_parameters():
+                param.requires_grad = False
+            apply_lora(model, config.lora_rank, config.lora_dropout, config.lora_alpha, config.lora_target_modules)
+            # make sure lora modules are trainable
+            config = LoraConfig(
+                r=config.lora_rank,
+                lora_alpha=config.lora_alpha,
+                lora_dropout=config.lora_dropout,
+                target_modules=config.lora_target_modules,
+            )
+            model = get_peft_model(model, config)
+        return model
     else:
         raise ValueError(f"Unknown init_from: {init_from}")
     if config.compile:
@@ -66,20 +85,22 @@ def init_model(init_from, model_args):
 
 
 def save_checkpoint(
-    out_dir, model, optimizer, model_args, iter_num, best_val_loss, config
+    out_dir, model, optimizer, model_args, iter_num, best_val_loss, config, lora=False
 ):
-    checkpoint = {
-        "model": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "model_args": model_args,
-        "iter_num": iter_num,
-        "best_val_loss": best_val_loss,
-        "config": config,
-    }
-    print(f"saving checkpoint to {out_dir}")
-    torch.save(checkpoint, os.path.join(out_dir, "ckpt.pt"))
-    model_export(model, os.path.join(out_dir, "model.bin"), version=0)
-
+    if not lora:
+        checkpoint = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "model_args": model_args,
+            "iter_num": iter_num,
+            "best_val_loss": best_val_loss,
+            "config": config,
+        }
+        print(f"saving checkpoint to {out_dir}")
+        torch.save(checkpoint, os.path.join(out_dir, "ckpt.pt"))
+        model_export(model, os.path.join(out_dir, "model.bin"), version=0)
+    else:
+        export_lora(model, os.path.join(out_dir, "model_lora.bin"), config.lora_target_modules)
 
 def train(
     model,
@@ -142,6 +163,7 @@ def train(
                         global_step,
                         best_val_loss,
                         config,
+                        lora=config.init_from == "lora",
                     )
         if global_step == 0 and config.eval_only:
             break
@@ -206,6 +228,7 @@ def train(
             global_step,
             best_val_loss,
             config,
+            lora=config.init_from == "lora",
         )
 
 
@@ -257,44 +280,16 @@ def main():
         else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
     )
 
-    tokenizer = load_tokenizer(config.tokenizer_config)
-
-    # prepare data
-    if master_process:
-        # check if data is already prepared
-        if config.dataset_directory.exists():
-            print("Data already prepared!")
-        else:
-            print("Preparing data...")
-            Task.packed_prepare(
-                tokenizer,
-                config.datasets,
-                config.dataset_directory,
-                config.chunk_size,
-                eval_iters=config.eval_iters,
-            )
-    else:
-        # wait for master process to prepare data
-        while not config.dataset_directory.exists():
-            pass
-
-    train_dataloader, val_dataloader = Task.create_dataloaders(
-        config.batch_size,
-        config.max_seq_len,
-        config.dataset_directory,
-        config.datasets,
-        validation = True if config.eval_iters > 0 else False,
-        seed=12345 + seed_offset,
-        num_workers=0,
-    )
-
     # task-specific setup
     iter_batches = partial(
         Task.iter_batches,
+        repo=config.dataset_repo,
+        data_dir=config.dataset_directory,
+        batch_size=config.batch_size,
+        eval_iters=config.eval_iters,
         max_seq_len=config.max_seq_len,
-        train_dataloader=train_dataloader,
-        val_dataloader=val_dataloader,
         device=config.device,
+        num_workers=0,
     )
 
     # model init
@@ -308,7 +303,7 @@ def main():
         max_seq_len=config.max_seq_len,
         dropout=config.dropout,
     )
-    model = init_model(config.init_from, model_args)
+    model = init_model(config.init_from, model_args, config)
     # wrap model into DDP container
     if ddp:
         # Ignore the `freqs_cis` buffer so that DDP does not broadcast it at

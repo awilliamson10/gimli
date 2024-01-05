@@ -1,9 +1,8 @@
-import dataclasses
 import sys
 from ast import literal_eval
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import yaml
 
@@ -18,7 +17,7 @@ class TrainConfiguration:
 
     # Data related configs
     batch_size: int = 128
-    max_seq_len: int = 512
+    max_seq_len: int = 2048
     vocab_source: str = "llama2"
     vocab_size: int = 32000
 
@@ -56,15 +55,19 @@ class TrainConfiguration:
     eval_iters: int = 0
     eval_only: bool = False
     always_save_checkpoint: bool = False
-    init_from: str = "scratch"
+    init_from: str = "scratch" # or "checkpoint" or "lora"
     wandb_log: bool = True
     wandb_project: str = "gimli_math"
     wandb_run_name: Optional[str] = None
 
+    # LoRA
+    lora_target_modules = ["wq", "wk", "wv", "wo"]
+    lora_rank: int = 4
+    lora_dropout: float = 0.0
+    lora_alpha: float = 1.0
+
     # Dataset
-    datasets: List[Tuple[str, float]] = dataclasses.field(default_factory=lambda: [
-        ("JeanKaddour/minipile", 100.0)
-    ])
+    dataset_repo: str = ""
     dataset_dir: str = "data"
     chunk_size: int = 2049 * 1024 # 2048 block size + 1 for causal (from LLama), 1024 blocks
 
